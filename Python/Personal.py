@@ -192,7 +192,8 @@ class Personal(ptResponder):
 
         # make sure the player has at least a microKI 
         # This also ensures that the player gets a Yeesha Book
-        PtSendKIMessageInt(kUpgradeKILevel,kMicroKI)
+        # PtSendKIMessageInt(kUpgradeKILevel,kMicroKI)
+        PtSendKIMessageInt(kUpgradeKILevel,kNormalKI) # HAAAAACK until we can fix the garrison KI dispenser
 
 
     def Load(self):
