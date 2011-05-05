@@ -190,11 +190,6 @@ class Personal(ptResponder):
         else:
             PtDebugPrint("Reward clothing list empty, not adding any clothing")
 
-        # make sure the player has at least a microKI 
-        # This also ensures that the player gets a Yeesha Book
-        # PtSendKIMessageInt(kUpgradeKILevel,kMicroKI)
-        PtSendKIMessageInt(kUpgradeKILevel,kNormalKI) # HAAAAACK until we can fix the garrison KI dispenser
-
 
     def Load(self):
         pass
