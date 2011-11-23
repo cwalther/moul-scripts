@@ -1120,6 +1120,58 @@ class xKI(ptModifier):
         noButton = ptGUIControlTextBox(KIYesNo.dialog.getControlFromTag(kNoButtonTextID))
         yesButton.setStringW(PtGetLocalizedString("KI.YesNoDialog.YESButton"))
         noButton.setStringW(PtGetLocalizedString("KI.YesNoDialog.NoButton"))
+    
+    
+    def IMakePlayerInvisible(self, arg):
+        """Makes a player invisible (locally), given its ptSceneobject or playerID"""
+        PtDebugPrint("xKI.IMakePlayerInvisible():\tAttempting: " + str(arg), level=kWarningLevel)
+        
+        avSO = None
+        if isinstance(arg, ptSceneobject):
+            avSO = arg
+        elif isinstance(arg, (int, long)):
+            # Make sure this avatar is in the age...
+            for player in PtGetPlayerList():
+                if player.getPlayerID() == arg:
+                    avSO = PtGetAvatarKeyFromClientID(arg).getSceneObject()
+                    break
+            else:
+                PtDebugPrint("xKI.IMakePlayerInvisible():\t... But they're not in the age!", level=kWarningLevel)
+        else:
+            PtDebugPrint("xKI.IMakePlayerInvisible():\tWrong type, you ninny.")
+        
+        # Now, actually do the deed.
+        if avSO:
+            avSO.draw.netForce(False)
+            avSO.draw.disable()
+            avSO.physics.netForce(False)
+            avSO.physics.suppress(True)
+    
+    
+    def IMakePlayerVisible(self, arg):
+        PtDebugPrint("xKI.IMakePlayerVisible():\tAttempting: " + str(arg), level=kWarningLevel)
+        
+        avSO = None
+        if isinstance(arg, ptSceneobject):
+            avSO = arg
+        elif isinstance(arg, (int, long)):
+            # Make sure this avatar is in the age...
+            for player in PtGetPlayerList():
+                if player.getPlayerID() == arg:
+                    avSO = PtGetAvatarKeyFromClientID(arg).getSceneObject()
+                    break
+            else:
+                PtDebugPrint("xKI.IMakePlayerVisible():\t... But they're not in the age!", level=kWarningLevel)
+        else:
+            PtDebugPrint("xKI.IMakePlayerVisible():\tWrong type, you ninny.")
+        
+        # Now, actually do the deed.
+        if avSO:
+            avSO.draw.netForce(0)
+            avSO.draw.enable()
+            avSO.physics.netForce(False)
+            avSO.physics.suppress(False)
+    
 
     def OnDefaultKeyCaught(self,ch,isDown,isRepeat,isShift,isCtrl,keycode):
         "get the left over keystrokes, that no one wanted"
@@ -4367,6 +4419,32 @@ class xKI(ptModifier):
             image.saveAsPNG(tryName)
         else:
             image.saveAsJPEG(tryName, 90)
+    
+    def AvatarPage(self, avSO, linkIn, lastOut):
+        """Checks our ignore list and disables drawing on this user if found"""
+        if not linkIn or lastOut: # Don't care about these
+            return
+        
+        localPlayerID = PtGetLocalClientID()
+        if localPlayerID:
+            remotePlayerID = PtGetClientIDFromAvatarKey(avSO.getKey())
+            
+            # Can't ignore yourself
+            if localPlayerID == remotePlayerID:
+                return
+        
+        # Your local clientID is ZERO when no avatar is set (ie StartUp)
+        # In this case, there is no vault, so let's bail
+        else:
+            return
+        
+        ignores = ptVault().getIgnoreListFolder().upcastToPlayerInfoListNode()
+        if ignores:
+            if ignores.playerlistHasPlayer(remotePlayerID):
+                self.IMakePlayerInvisible(avSO)
+        else:
+            PtDebugPrint("xKI.AvatarPage():\tHmmm... The ignore list is nil. That's bad :\\")
+            return
 
     def OnMemberUpdate(self):
         "The userlist has been updated, get a fresh copy"
@@ -4504,9 +4582,14 @@ class xKI(ptModifier):
                 # tupdata is ( ptVaultNodeRef )
                 if theKILevel > kMicroKI:
                     folder = tupdata[0].getParent()
-                    folder = folder.upcastToFolderNode()
+                    child = tupdata[0].getChild()
+                    
                     # if the parent of this ref is the inbox, then its incoming mail
-                    if type(folder) != type(None) and folder.folderGetType() == PtVaultStandardNodes.kInboxFolder:
+                    if folder.getType() == PtVaultNodeTypes.kFolderNode:
+                        folder = folder.upcastToFolderNode()
+                        if folder.folderGetType() != PtVaultStandardNodes.kInboxFolder:
+                            return None
+                        
                         #Tye: This is a hack as the beenSeen() function has not been implemented yet!
                         #Since the function always returns true, we'll force the alert to happen with every message!
                         #Please remove when the status of the beenSeen() function has changed.
@@ -4524,18 +4607,39 @@ class xKI(ptModifier):
                                 ### no check needed- on with the show
                                 # then show alert
                                 self.IAlertKIStart()
+                        self.IBKCheckFolderRefresh(folder)
+                    
+                    # Added: 11/22/2011 -- Hoikas
+                    # if this is a the ignore list, then we need to try to ignore (make invisible) this player
+                    elif folder.getType() == PtVaultNodeTypes.kPlayerInfoListNode:
+                        folder = folder.upcastToPlayerInfoListNode()
+                        if folder.folderGetType() != PtVaultStandardNodes.kIgnoreListFolder:
+                            return None
+                        
+                        child = child.upcastToPlayerInfoNode()
+                        if child:
+                            self.IMakePlayerInvisible(child.playerGetID())
 
-                    child = tupdata[0].getChild()
-                    child = child.upcastToFolderNode()
-                    if type(child) != type(None):
+                    if child and child.getType() == PtVaultNodeTypes.kFolderNode:
                         # the thing being added is a folder... re-get the folders
                         PtDebugPrint("xKI- adding a folder... refresh folder list",level=kDebugDumpLevel)
                         self.IBigKIRefreshFolders()
-                    self.IBKCheckFolderRefresh(folder)
             elif event == PtVaultCallbackTypes.kVaultRemovingNodeRef:
                 PtDebugPrint("xKI: kVaultRemovingNodeRef event (childID=%d,parentID=%d)" % (tupdata[0].getChildID(),tupdata[0].getParentID()),level=kDebugDumpLevel)
                 # tupdata is ( ptVaultNodeRef )
-                pass
+                folder = tupdata[0].getParent()
+                child = tupdata[0].getChild()
+                
+                # Added: 11/22/2011 -- Hoikas
+                # if this is a the ignore list, then we need to try to unignore (make invisible) this player
+                if folder.getType() == PtVaultNodeTypes.kPlayerInfoListNode:
+                    folder = folder.upcastToPlayerInfoListNode()
+                    if folder.folderGetType() != PtVaultStandardNodes.kIgnoreListFolder:
+                        return None
+                    
+                    child = child.upcastToPlayerInfoNode()
+                    if child:
+                        self.IMakePlayerVisible(child.playerGetID())
             elif event == PtVaultCallbackTypes.kVaultNodeRefRemoved:
                 PtDebugPrint("xKI: kVaultNodeRefRemoved event (childID,parentID) ",tupdata,level=kDebugDumpLevel)
                 # tupdata is ( childID, parentID )
@@ -8417,20 +8521,6 @@ class xKI(ptModifier):
                     self.IBigKIDisplayCurrentContentPlayer()
                 elif BKRightSideMode == kBKMarkerListExpanded:
                     self.IBigKIDisplayCurrentContentMarkerFolder()
-
-    def IRemoveIgnoredPlayers(self, playerlist):
-        "Remove all the offline players in this list... returns result list"
-        nonIgnoredlist = []
-        ignores = ptVault().getIgnoreListFolder()
-        for plyr in playerlist:
-            if isinstance(plyr,ptVaultNodeRef):
-                PLR = plyr.getChild()
-                PLR = PLR.upcastToPlayerInfoNode()
-                # its an element.. should be a player
-                if type(PLR) != type(None) and PLR.getType() == PtVaultNodeTypes.kPlayerInfoNode:
-                    if not ignores.playerlistHasPlayer(PLR.playerGetID()):
-                        nonIgnored.append(plyr)
-        return nonIgnored
 
     def IBigKIRefreshFolders(self):
         "Refresh the Folders list for the Inbox and the Age Journal folders"
