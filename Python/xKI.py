@@ -161,7 +161,7 @@ KILightObjectName = "RTOmniKILight"
 AgeName = ""
 JalakGUIState = 0
 kHideAgesHackList = ["BahroCave","PelletBahroCave","Pellet Cave","LiveBahroCave","LiveBahroCaves"]
-MutualIgnore = True
+MutualIgnore = 1
 
 #======Phased globals
 PhasedKICreateNotes = 1
@@ -226,6 +226,7 @@ kChronicleOnlyPMsType = 2
 kChronicleBuddiesOnRequest = "PlayerKIBuddiesOnRequest"
 kChronicleBuddiesOnRequestType = 2
 kChronCGZPlaying = "CGZPlaying"
+kChronicleMutualIgnore = "PlayerKIMutualIgnore"
 # ==============
 # BlackBar globals
 #----Controls
@@ -1606,6 +1607,7 @@ class xKI(ptModifier):
         self.IDetermineKILevel()
         self.IDetermineKIFlags()
         self.IDetermineGZ()
+        self.IDetermineMutualIgnore()
 
         # Hide all dialogs first, then we'll show the one we want
         KINanoBlackBar.dialog.hide()
@@ -4806,6 +4808,17 @@ class xKI(ptModifier):
                 gFeather = string.atoi(entry.chronicleGetValue())
             except ValueError:
                 gFeather = 0
+    
+    def IDetermineMutualIgnore(self):
+        global MutualIgnore
+        
+        vault = ptVault()
+        chron = vault.findChronicleEntry(kChronicleMutualIgnore)
+        if chron:
+            MutualIgnore = string.atoi(chron.chronicleGetValue())
+            PtDebugPrint("xKI: The MutualIgnore status is: " + str(MutualIgnore), level=kWarningLevel)
+        else:
+            vault.addChronicleEntry(kChronicleMutualIgnore, kChronicleCensorLevelType, str(MutualIgnore))
 
     def IUpgradeKIMarkerLevel(self,newLevel):
         "upgrade the KIMarker level to something"
@@ -6416,6 +6429,7 @@ class xKI(ptModifier):
         global ChatLogFile
         global AmICCR
         global gFeather
+        global MutualIgnore
         # if we are a CCR then look for CCR special commands
         if AmICCR:
             if string.lower(chatmessage).startswith("//begin"):
@@ -6893,6 +6907,32 @@ class xKI(ptModifier):
                 v = "is"
             self.IAddRTChat(None,"The %s %s too heavy to lift. Maybe you should stick to feathers." % (chatmessage[len("/get "):],v),0)
             return None
+        if string.lower(chatmessage) == "/shun":
+            vault = ptVault()
+            ignores = vault.getIgnoreListFolder().upcastToPlayerInfoListNode()
+            if not ignores:
+                PtDebugPrint("xKI: /shun failed -- Ignore list is nil? That's bad.")
+                return None
+            
+            # Proc the changes
+            MutualIgnore = int(not MutualIgnore) # You're an oxymoron.
+            for player in PtGetPlayerList():
+                kiNum = player.getPlayerID()
+                if ignores.playerlistHasPlayer(kiNum):
+                    self.ISendIgnoreNotify(kiNum, MutualIgnore)
+            
+            # Say something... This should probably be in a LOC file :(
+            if MutualIgnore:
+                self.IAddRTChat(None, "[ Mutual Ignore Enabled ]", 0)
+            else:
+                self.IAddRTChat(None, "[ Mutual Ignore Disabled ]", 0)
+            
+            # Save changes
+            chron = vault.findChronicleEntry(kChronicleMutualIgnore)
+            chron.chronicleSetValue(str(MutualIgnore))
+            chron.save()
+            return None
+        
         #
         # The check for emote commands should be last
         # search message for emote commmand (could embedd into message)
