@@ -5583,6 +5583,10 @@ class ptNotify:
     def addReceiver(self,key):
         """Add a receivers key to receive this Notify message"""
         pass
+    
+    def addNetReceiver(self,playerID):
+        """"Adds a remote playerID for a directed Notify message"""
+        pass
 
     def addResponderState(self,state):
         """Add a responder state event record to the notify message"""
@@ -5601,6 +5605,10 @@ This event record is used to pass a number variable to another python program"""
     def clearReceivers(self):
         """Remove all the receivers that this Notify message has
 - receivers are automatically added if from a ptAttribActivator"""
+        pass
+    
+    def clearNetReceivers(self):
+        """Remove all the net receivers that this directed Notify message has"""
         pass
 
     def netForce(self,forceFlag):
