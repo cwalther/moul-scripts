@@ -161,7 +161,7 @@ KILightObjectName = "RTOmniKILight"
 AgeName = ""
 JalakGUIState = 0
 kHideAgesHackList = ["BahroCave","PelletBahroCave","Pellet Cave","LiveBahroCave","LiveBahroCaves"]
-
+MutualIgnore = True
 
 #======Phased globals
 PhasedKICreateNotes = 1
@@ -1137,6 +1137,7 @@ class xKI(ptModifier):
                     break
             else:
                 PtDebugPrint("xKI.IMakePlayerInvisible():\t... But they're not in the age!", level=kWarningLevel)
+                return None
         else:
             PtDebugPrint("xKI.IMakePlayerInvisible():\tWrong type, you ninny.")
         
@@ -1146,6 +1147,9 @@ class xKI(ptModifier):
             avSO.draw.disable()
             avSO.physics.netForce(False)
             avSO.physics.suppress(True)
+            
+            if MutualIgnore:
+                self.ISendIgnoreNotify(PtGetClientIDFromAvatarKey(avSO.getKey()), True)
     
     
     def IMakePlayerVisible(self, arg):
@@ -1162,6 +1166,7 @@ class xKI(ptModifier):
                     break
             else:
                 PtDebugPrint("xKI.IMakePlayerVisible():\t... But they're not in the age!", level=kWarningLevel)
+                return None
         else:
             PtDebugPrint("xKI.IMakePlayerVisible():\tWrong type, you ninny.")
         
@@ -1171,6 +1176,24 @@ class xKI(ptModifier):
             avSO.draw.enable()
             avSO.physics.netForce(False)
             avSO.physics.suppress(False)
+            
+            if MutualIgnore:
+                self.ISendIgnoreNotify(PtGetClientIDFromAvatarKey(avSO.getKey()), False)
+    
+    
+    def ISendIgnoreNotify(self, clientID, ignore):
+        notify = ptNotify(self.key)
+        notify.addReceiver(self.key)
+        notify.addNetReceiver(clientID)
+        notify.netPropagate(True)
+        notify.netForce(True)
+        notify.setActivate(1.0)
+        if ignore:
+            var = "hide:%i" % PtGetLocalClientID()
+        else:
+            var = "show:%i" % PtGetLocalClientID()
+        notify.addVarNumber(var, 1.0)
+        notify.send()
     
 
     def OnDefaultKeyCaught(self,ch,isDown,isRepeat,isShift,isCtrl,keycode):
@@ -1322,9 +1345,34 @@ class xKI(ptModifier):
         global YeeshaBook
         global IsYeeshaBookEnabled
         PtDebugPrint("xKI: Notify  state=%f, id=%d" % (state,id),level=kDebugDumpLevel)
-        # is it a notification from the scene input interface or PlayerBook?
         for event in events:
-            if event[0] == kOfferLinkingBook: # this can come locally (to re-draw the panel after someone has accepted or rejected it) or...
+            # Is this a custom ptNotify from a remote xKI instance?
+            if (id == -1 and event[0] == PtEventType.kVariable) and not PtWasLocallyNotified(self.key):
+                data = str(event[1]).lower().split(':')
+                action = data[0]
+                kiNum = int(data[1])
+                
+                # Acceptable actions: [show, hide]
+                sender = PtGetAvatarKeyFromClientID(kiNum)
+                if sender:
+                    sender = sender.getSceneObject()
+                else:
+                    PtDebugPrint("xKI.OnNotify():\tGot a show/hide notify for an invalid member!")
+                    return
+                
+                if action == "show":
+                    PtDebugPrint("xKI.OnNotify():\tGot a mutual-unignore notify from #" + str(kiNum), level=kWarningLevel)
+                    sender.draw.netForce(0)
+                    sender.draw.enable()
+                elif action == "hide":
+                    PtDebugPrint("xKI.OnNotify():\tGot a mutual-ignore notify from #" + str(kiNum), level=kWarningLevel)
+                    sender.draw.netForce(0)
+                    sender.draw.disable()
+                else:
+                    PtDebugPrint("xKI.OnNotify():\tGot a garbage custom ptNotify: " + action)
+            
+            # is it a notification from the scene input interface or PlayerBook?
+            elif event[0] == kOfferLinkingBook: # this can come locally (to re-draw the panel after someone has accepted or rejected it) or...
                 PtDebugPrint("got offer book notification",level=kDebugDumpLevel)
                 if theKILevel == kMicroKI or PtIsSinglePlayerMode():
                     plybkCB = ptGUIControlCheckBox(KIMicroBlackbar.dialog.getControlFromTag(kPlayerBookCBID))
