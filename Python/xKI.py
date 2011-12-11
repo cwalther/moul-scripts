@@ -6927,9 +6927,9 @@ class xKI(ptModifier):
             
             # Say something... This should probably be in a LOC file :(
             if MutualIgnore:
-                self.IAddRTChat(None, "[ Mutual Ignore Enabled ]", 0)
+                self.IAddRTChat(None, "[ Mutual Invisibility Enabled - Ignored players cannot see you (but still receive your chat) ]", 0)
             else:
-                self.IAddRTChat(None, "[ Mutual Ignore Disabled ]", 0)
+                self.IAddRTChat(None, "[ Mutual Invisibility Disabled - Ignored players can see you ]", 0)
             
             # Save changes
             chron = vault.findChronicleEntry(kChronicleMutualIgnore)
