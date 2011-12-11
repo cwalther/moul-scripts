@@ -1365,10 +1365,14 @@ class xKI(ptModifier):
                     PtDebugPrint("xKI.OnNotify():\tGot a mutual-unignore notify from #" + str(kiNum), level=kWarningLevel)
                     sender.draw.netForce(0)
                     sender.draw.enable()
+                    sender.physics.netForce(0)
+                    sender.physics.suppress(False)
                 elif action == "hide":
                     PtDebugPrint("xKI.OnNotify():\tGot a mutual-ignore notify from #" + str(kiNum), level=kWarningLevel)
                     sender.draw.netForce(0)
                     sender.draw.disable()
+                    sender.physics.netForce(0)
+                    sender.physics.suppress(True)
                 else:
                     PtDebugPrint("xKI.OnNotify():\tGot a garbage custom ptNotify: " + action)
             
