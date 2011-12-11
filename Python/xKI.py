@@ -6911,19 +6911,35 @@ class xKI(ptModifier):
                 v = "is"
             self.IAddRTChat(None,"The %s %s too heavy to lift. Maybe you should stick to feathers." % (chatmessage[len("/get "):],v),0)
             return None
-        if string.lower(chatmessage) == "/shun":
-            vault = ptVault()
-            ignores = vault.getIgnoreListFolder().upcastToPlayerInfoListNode()
-            if not ignores:
-                PtDebugPrint("xKI: /shun failed -- Ignore list is nil? That's bad.")
-                return None
+        if string.lower(chatmessage).startswith("/shun"):
+            arg = string.lower(chatmessage)[len("/shun"):].lstrip()
+            if arg == "?":
+                newValue = MutualIgnore
+            elif arg == "on" or arg == "yes" or arg == "true" or arg == "1":
+                newValue = 1
+            elif arg == "off" or arg == "no" or arg == "false" or arg == "0":
+                newValue = 0
+            else:
+                newValue = int(not MutualIgnore)
             
-            # Proc the changes
-            MutualIgnore = int(not MutualIgnore) # You're an oxymoron.
-            for player in PtGetPlayerList():
-                kiNum = player.getPlayerID()
-                if ignores.playerlistHasPlayer(kiNum):
-                    self.ISendIgnoreNotify(kiNum, MutualIgnore)
+            if newValue != MutualIgnore:
+                vault = ptVault()
+                ignores = vault.getIgnoreListFolder().upcastToPlayerInfoListNode()
+                if not ignores:
+                    PtDebugPrint("xKI: /shun failed -- Ignore list is nil? That's bad.")
+                    return None
+                
+                # Proc the changes
+                MutualIgnore = newValue
+                for player in PtGetPlayerList():
+                    kiNum = player.getPlayerID()
+                    if ignores.playerlistHasPlayer(kiNum):
+                        self.ISendIgnoreNotify(kiNum, MutualIgnore)
+                
+                # Save changes
+                chron = vault.findChronicleEntry(kChronicleMutualIgnore)
+                chron.chronicleSetValue(str(MutualIgnore))
+                chron.save()
             
             # Say something... This should probably be in a LOC file :(
             if MutualIgnore:
@@ -6931,10 +6947,6 @@ class xKI(ptModifier):
             else:
                 self.IAddRTChat(None, "[ Mutual Invisibility Disabled - Ignored players can see you ]", 0)
             
-            # Save changes
-            chron = vault.findChronicleEntry(kChronicleMutualIgnore)
-            chron.chronicleSetValue(str(MutualIgnore))
-            chron.save()
             return None
         
         #
