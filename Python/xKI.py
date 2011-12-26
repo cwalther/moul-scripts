@@ -162,6 +162,8 @@ AgeName = ""
 JalakGUIState = 0
 kHideAgesHackList = ["BahroCave","PelletBahroCave","Pellet Cave","LiveBahroCave","LiveBahroCaves"]
 MutualIgnore = 1
+kInvisibilityReasonIgnore = 1
+kInvisibilityReasonMutualIgnore = 2
 
 #======Phased globals
 PhasedKICreateNotes = 1
@@ -827,6 +829,10 @@ class xKI(ptModifier):
 
         self.ImagerMap = {}
 
+        # keeps track of which avatars in the current age we've made invisible for what reasons
+        # maps client ID to bitfield of kInvisibilityReason*
+        self.avatarInvisibility = {}
+
 
     def OnInit(self):
         PtLoadDialog("KIBlackBar",self.key)
@@ -1123,63 +1129,53 @@ class xKI(ptModifier):
         noButton.setStringW(PtGetLocalizedString("KI.YesNoDialog.NoButton"))
     
     
-    def IMakePlayerInvisible(self, arg):
-        """Makes a player invisible (locally), given its ptSceneobject or playerID"""
-        PtDebugPrint("xKI.IMakePlayerInvisible():\tAttempting: " + str(arg), level=kWarningLevel)
+    def IUpdatePlayerInvisibility(self, clientID, invisible, reason):
+        """Makes a player visible or invisible (locally) depending whether we ignore them or they mutually-ignore us"""
+        PtDebugPrint("xKI.IUpdatePlayerInvisibility():\t%s%X on player %d" % (invisible and "+" or "-", reason, clientID), level=kWarningLevel)
         
-        avSO = None
-        if isinstance(arg, ptSceneobject):
-            avSO = arg
-        elif isinstance(arg, (int, long)):
-            # Make sure this avatar is in the age...
-            for player in PtGetPlayerList():
-                if player.getPlayerID() == arg:
-                    avSO = PtGetAvatarKeyFromClientID(arg).getSceneObject()
-                    break
-            else:
-                PtDebugPrint("xKI.IMakePlayerInvisible():\t... But they're not in the age!", level=kWarningLevel)
-                return None
+        # Make sure this avatar is in the age, otherwise nothing to do
+        for player in PtGetPlayerList():
+            if player.getPlayerID() == clientID:
+                break
         else:
-            PtDebugPrint("xKI.IMakePlayerInvisible():\tWrong type, you ninny.")
+            PtDebugPrint("xKI.IUpdatePlayerInvisibility():\t... But they're not in the age!", level=kWarningLevel)
+            # Not in the age - there shouldn't be an entry, but remove it just in case
+            if clientID in self.avatarInvisibility:
+                PtDebugPrint("xKI.IUpdatePlayerInvisibility():\tDropping stale invisibility entry for absent avatar %d (%d)" % (clientID, self.avatarInvisibility[clientID]), level=kWarningLevel)
+                del self.avatarInvisibility[clientID]
+            return
         
-        # Now, actually do the deed.
-        if avSO:
-            avSO.draw.netForce(False)
-            avSO.draw.disable()
-            avSO.physics.netForce(False)
-            avSO.physics.suppress(True)
-            
-            if MutualIgnore:
-                self.ISendIgnoreNotify(PtGetClientIDFromAvatarKey(avSO.getKey()), True)
-    
-    
-    def IMakePlayerVisible(self, arg):
-        PtDebugPrint("xKI.IMakePlayerVisible():\tAttempting: " + str(arg), level=kWarningLevel)
-        
-        avSO = None
-        if isinstance(arg, ptSceneobject):
-            avSO = arg
-        elif isinstance(arg, (int, long)):
-            # Make sure this avatar is in the age...
-            for player in PtGetPlayerList():
-                if player.getPlayerID() == arg:
-                    avSO = PtGetAvatarKeyFromClientID(arg).getSceneObject()
-                    break
-            else:
-                PtDebugPrint("xKI.IMakePlayerVisible():\t... But they're not in the age!", level=kWarningLevel)
-                return None
+        oldReasons = self.avatarInvisibility.get(clientID, 0)
+        wasInvisible = (oldReasons != 0)
+        if invisible:
+            newReasons = oldReasons | reason
         else:
-            PtDebugPrint("xKI.IMakePlayerVisible():\tWrong type, you ninny.")
+            newReasons = oldReasons & ~reason
+        if newReasons != 0:
+            self.avatarInvisibility[clientID] = newReasons
+        else:
+            try:
+                del self.avatarInvisibility[clientID]
+            except KeyError:
+                pass
+        shouldBeInvisible = (newReasons != 0)
         
-        # Now, actually do the deed.
-        if avSO:
-            avSO.draw.netForce(0)
-            avSO.draw.enable()
-            avSO.physics.netForce(False)
-            avSO.physics.suppress(False)
-            
-            if MutualIgnore:
-                self.ISendIgnoreNotify(PtGetClientIDFromAvatarKey(avSO.getKey()), False)
+        PtDebugPrint("xKI.IUpdatePlayerInvisibility():\t... %X -> %X" % (oldReasons, newReasons), level=kWarningLevel)
+        
+        if wasInvisible != shouldBeInvisible:
+            avSO = PtGetAvatarKeyFromClientID(clientID).getSceneObject()
+            if avSO:
+                avSO.draw.netForce(False)
+                avSO.physics.netForce(False)
+                if shouldBeInvisible:
+                    avSO.draw.disable()
+                    avSO.physics.suppress(True)
+                else:
+                    avSO.draw.enable()
+                    avSO.physics.suppress(False)
+        
+        if reason == kInvisibilityReasonIgnore and MutualIgnore:
+            self.ISendIgnoreNotify(clientID, invisible)
     
     
     def ISendIgnoreNotify(self, clientID, ignore):
@@ -1354,25 +1350,12 @@ class xKI(ptModifier):
                 kiNum = int(data[1])
                 
                 # Acceptable actions: [show, hide]
-                sender = PtGetAvatarKeyFromClientID(kiNum)
-                if sender:
-                    sender = sender.getSceneObject()
-                else:
-                    PtDebugPrint("xKI.OnNotify():\tGot a show/hide notify for an invalid member!")
-                    return
-                
                 if action == "show":
                     PtDebugPrint("xKI.OnNotify():\tGot a mutual-unignore notify from #" + str(kiNum), level=kWarningLevel)
-                    sender.draw.netForce(0)
-                    sender.draw.enable()
-                    sender.physics.netForce(0)
-                    sender.physics.suppress(False)
+                    self.IUpdatePlayerInvisibility(kiNum, False, kInvisibilityReasonMutualIgnore)
                 elif action == "hide":
                     PtDebugPrint("xKI.OnNotify():\tGot a mutual-ignore notify from #" + str(kiNum), level=kWarningLevel)
-                    sender.draw.netForce(0)
-                    sender.draw.disable()
-                    sender.physics.netForce(0)
-                    sender.physics.suppress(True)
+                    self.IUpdatePlayerInvisibility(kiNum, True, kInvisibilityReasonMutualIgnore)
                 else:
                     PtDebugPrint("xKI.OnNotify():\tGot a garbage custom ptNotify: " + action)
             
@@ -4476,29 +4459,41 @@ class xKI(ptModifier):
     
     def AvatarPage(self, avSO, linkIn, lastOut):
         """Checks our ignore list and disables drawing on this user if found"""
-        if not linkIn or lastOut: # Don't care about these
-            return
+        if not linkIn:
+            # Player is gone, we don't care anymore whether we made them invisible
+            try:
+                del self.avatarInvisibility[PtGetClientIDFromAvatarKey(avSO.getKey())]
+            except KeyError:
+                pass
         
-        localPlayerID = PtGetLocalClientID()
-        if localPlayerID:
-            remotePlayerID = PtGetClientIDFromAvatarKey(avSO.getKey())
+        else:
+            # New player encountered, check whether to make them invisible
             
-            # Can't ignore yourself
-            if localPlayerID == remotePlayerID:
+            localPlayerID = PtGetLocalClientID()
+            if localPlayerID:
+                remotePlayerID = PtGetClientIDFromAvatarKey(avSO.getKey())
+                
+                # Can't ignore yourself
+                if localPlayerID == remotePlayerID:
+                    return
+            
+            # Your local clientID is ZERO when no avatar is set (ie StartUp)
+            # In this case, there is no vault, so let's bail
+            else:
                 return
-        
-        # Your local clientID is ZERO when no avatar is set (ie StartUp)
-        # In this case, there is no vault, so let's bail
-        else:
-            return
-        
-        ignores = ptVault().getIgnoreListFolder().upcastToPlayerInfoListNode()
-        if ignores:
-            if ignores.playerlistHasPlayer(remotePlayerID):
-                self.IMakePlayerInvisible(avSO)
-        else:
-            PtDebugPrint("xKI.AvatarPage():\tHmmm... The ignore list is nil. That's bad :\\")
-            return
+            
+            # There shouldn't be an entry because we clean them out on link-out, but remove it just in case (newly linked in avatar is initially visible)
+            if remotePlayerID in self.avatarInvisibility:
+                PtDebugPrint("xKI.AvatarPage():\tDropping stale invisibility entry for arriving avatar %d (%d)" % (remotePlayerID, self.avatarInvisibility[remotePlayerID]), level=kWarningLevel)
+                del self.avatarInvisibility[remotePlayerID]
+            
+            ignores = ptVault().getIgnoreListFolder().upcastToPlayerInfoListNode()
+            if ignores:
+                if ignores.playerlistHasPlayer(remotePlayerID):
+                    self.IUpdatePlayerInvisibility(remotePlayerID, True, kInvisibilityReasonIgnore)
+            else:
+                PtDebugPrint("xKI.AvatarPage():\tHmmm... The ignore list is nil. That's bad :\\")
+                return
 
     def OnMemberUpdate(self):
         "The userlist has been updated, get a fresh copy"
@@ -4672,7 +4667,7 @@ class xKI(ptModifier):
                         
                         child = child.upcastToPlayerInfoNode()
                         if child:
-                            self.IMakePlayerInvisible(child.playerGetID())
+                            self.IUpdatePlayerInvisibility(child.playerGetID(), True, kInvisibilityReasonIgnore)
 
                     if child and child.getType() == PtVaultNodeTypes.kFolderNode:
                         # the thing being added is a folder... re-get the folders
@@ -4693,7 +4688,7 @@ class xKI(ptModifier):
                     
                     child = child.upcastToPlayerInfoNode()
                     if child:
-                        self.IMakePlayerVisible(child.playerGetID())
+                        self.IUpdatePlayerInvisibility(child.playerGetID(), False, kInvisibilityReasonIgnore)
             elif event == PtVaultCallbackTypes.kVaultNodeRefRemoved:
                 PtDebugPrint("xKI: kVaultNodeRefRemoved event (childID,parentID) ",tupdata,level=kDebugDumpLevel)
                 # tupdata is ( childID, parentID )
