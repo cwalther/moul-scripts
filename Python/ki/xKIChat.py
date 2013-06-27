@@ -58,6 +58,11 @@ import xKIExtChatCommands
 from xKIConstants import *
 from xKIHelpers import *
 
+# GoMe
+import gome
+import traceback
+from PlasmaNetConstants import *
+
 
 ## A class to process all the RT Chat functions of the KI.
 class xKIChat(object):
@@ -405,7 +410,7 @@ class xKIChat(object):
     #######################
 
     ## Adds a line to the RT chat.
-    def AddChatLine(self, player, message, cFlags, forceKI=True):
+    def AddChatLine(self, player, message, cFlags, forceKI=True, isQuestion=False):
 
         try:
             PtDebugPrint(u"xKIChat.AddChatLine(): Message = \"{}\".".format(message), player, cFlags, level=kDebugDumpLevel)
@@ -565,6 +570,25 @@ class xKIChat(object):
         # Write to the log file.
         if self.chatLogFile is not None and self.chatLogFile.isOpen():
             self.chatLogFile.write(chatHeaderFormatted[0:] + chatMessageFormatted)
+
+        # GoMe.
+        if isinstance(cFlags, ChatFlags):
+            isBroadcast = cFlags.broadcast or not cFlags.flags
+            isPrivate = cFlags.private
+            isInterAge = cFlags.interAge
+            isStatus = cFlags.status
+        elif cFlags != kChat.SystemMessage:
+            isBroadcast = 1
+            isPrivate = isInterAge = isStatus = 0
+        else:
+            isBroadcast = isPrivate = isInterAge = isStatus = 0
+        try:
+            if (isBroadcast or isStatus) and not isInterAge and player:
+                self.commandsProcessor.agm.WriteLogs(player, message, isStatus, isQuestion)
+            if "?" in message and isPrivate and not isInterAge:
+                self.commandsProcessor.agm.questions.append([player.getPlayerName(), message])
+        except AttributeError:
+            pass
 
         # If the chat is overflowing, erase the first line.
         if chatArea.getBufferSize() > kChat.MaxChatSize:
@@ -791,6 +815,9 @@ class CommandsProcessor:
 
         self.chatMgr = chatMgr
 
+        # GoMe.
+        self.savedShirt = None
+
     ## Called when the processor needs to process a message.
     # Returns the appropriate message and performs all the necessary operations
     # to apply the command.
@@ -806,6 +833,7 @@ class CommandsProcessor:
         if PtIsInternalRelease():
             commands.update(kCommands.Internal)
         commands.update(kCommands.EasterEggs)
+        commands.update(kCommands.GoMe)
 
         # Does the message contain a standard command?
         for command, function in commands.iteritems():
@@ -815,7 +843,10 @@ class CommandsProcessor:
                     params = theMessage[1]
                 else:
                     params = None
-                getattr(self, function)(params)
+                try:
+                    getattr(self, function)(params)
+                except:  # In case one of the GoMe functions malfunctions.
+                    traceback.print_exc()
                 return None
 
         # Is it a simple text-based command?
@@ -1283,3 +1314,213 @@ class CommandsProcessor:
                 self.chatMgr.AddChatLine(None, pOut, 0)
         else:
             self.chatMgr.AddChatLine(None, "There is nothing there but lint.", 0)
+
+    #~~~~~~~~~~~~~~~~~~~~~~#
+    # Easter Eggs Commands #
+    #~~~~~~~~~~~~~~~~~~~~~~#
+
+    ## Links the player to his Nexus.
+    def LinkToNexus(self, params):
+
+        gome.LinkTo("Nexus", PtLinkingRules.kOwnedBook)
+        self.chatMgr.DisplayStatusMessage("Linking to Nexus...")
+
+    ## Links the player to the public City, at the specified spawn point.
+    def LinkToCity(self, params):
+
+        vault = ptVault()
+        cityNode = vault.getLinkToCity()
+
+        # Get the requested spawn point.
+        if not params:
+            params="ferry"
+        try:
+            spawnPointName = gome.kSpawnPoints[params]
+        except:
+            self.chatMgr.DisplayStatusMessage("Invalid spawn point name. Valid names are: {}.".format(", ".join(gome.kSpawnPoints.keys())))
+            return
+        spawnPoint = None
+        for p in cityNode.getSpawnPoints():
+            if p.getName() == spawnPointName:
+                spawnPoint = p
+                break
+        if not spawnPoint:
+            self.chatMgr.DisplayStatusMessage("You haven't registered the specified spawn point yet.")
+            return
+
+        # Link the player to his destination.
+        cityLink = cityNode.asAgeLinkStruct()
+        cityLink.setSpawnPoint(spawnPoint)
+        ptNetLinkingMgr().linkToAge(cityLink)
+        self.chatMgr.DisplayStatusMessage("Linking to City: {}...".format(spawnPoint.getTitle()))
+
+    ## Links the player to the GoMe Pub.
+    def LinkToGoMePub(self, params):
+
+        gome.LinkTo("GuildPub-Messengers", guid=gome.kPubGuid)
+        self.chatMgr.DisplayStatusMessage("Linking to Guild of Messengers Pub...")
+
+    ## Links the player to the GoMe Hood if he is a member.
+    def LinkToGoMeHood(self, params):
+
+        vault = ptVault()
+        hoodNode = vault.getLinkToMyNeighborhood()
+
+        # Check if the player is a member of the hood.
+        hoodInfo = hoodNode.getAgeInfo()
+        if hoodInfo.getAgeInstanceGuid() != gome.kHoodGuid:
+            self.chatMgr.DisplayStatusMessage("You are not a member of the hood. Access denied.")
+            return
+
+        # Link the player to his destination.
+        hoodLink = hoodNode.asAgeLinkStruct()
+        ptNetLinkingMgr().linkToAge(hoodLink)
+        self.chatMgr.DisplayStatusMessage("Linking to Guild of Messengers Hood...")
+    
+    ## Bumps the GoMe Hood (if the player is a member of it).
+    def BumpGoMeHood(self, params):
+
+        vault = ptVault()
+        hoodNode = vault.getLinkToMyNeighborhood()
+
+        # Check if the player is a member of the hood.
+        hoodInfoNode = hoodNode.getAgeInfo()
+        if hoodInfoNode.getAgeInstanceGuid() != gome.kHoodGuid:
+            self.chatMgr.DisplayStatusMessage("You are not a member of the hood. Access denied.")
+            return
+
+        # Make the hood private then public.
+        PtRemovePublicAge(gome.kHoodGuid)
+        PtCreatePublicAge(hoodInfoNode.asAgeInfoStruct())
+        self.chatMgr.DisplayStatusMessage("Guild of Messengers Hood bumped.")
+
+    ## Toggles the GoMe shirt.
+    def ToggleGoMeShirt(self, params):
+
+        # By default, make the avatar wear the shirt.
+        if not params:
+            params = "on"
+
+        av = PtGetLocalAvatar()
+        av.avatar.netForce(True)
+        group = av.avatar.getAvatarClothingGroup()
+        if params == "on" and gome.kShirt[group] in [n[0] for n in av.avatar.getAvatarClothingList()]:
+            self.chatMgr.DisplayStatusMessage("You are already wearing a GoMe shirt.")
+        elif params == "on" and not self.savedShirt:
+            self.savedShirt = []
+            for s in av.avatar.getAvatarClothingList():
+                if s[1] == kShirtClothingItem:
+                    self.savedShirt.append(s[0])
+            av.avatar.wearClothingItem(gome.kShirt[group])
+            self.chatMgr.DisplayStatusMessage("You have been temporarily given a GoMe shirt. It will disappear upon the next login.")
+            self.chatMgr.DisplayStatusMessage("To make the change permanent, visit your closet, then leave it.")
+        else:
+            if self.savedShirt:
+                for s in self.savedShirt:
+                    av.avatar.wearClothingItem(s)
+                self.chatMgr.DisplayStatusMessage("GoMe shirt removed. Your previous shirt was restored (minus the color; sorry).")
+            elif gome.kShirt[group] in [n[0] for n in av.avatar.getAvatarClothingList()]:
+                self.chatMgr.DisplayStatusMessage("Your permanent shirt is a GoMe shirt. Not removing.")
+            else:
+                self.chatMgr.DisplayStatusMessage("You aren't currently wearing a GoMe shirt.")
+            self.savedShirt = None
+
+    ## Handles commands for the AGM.
+    def ProcessAGM(self, params):
+
+        if PtGetLocalPlayer().getPlayerName() not in gome.kModerators:
+            self.chatMgr.DisplayStatusMessage("You are not an authorized AGM moderator.")
+            return
+
+        if not params:
+            self.chatMgr.DisplayStatusMessage("Invalid AGM command. Valid commands: l, d [id], a [id], n, +[speaker], -[speaker], c [speakers/questions].")
+            return
+
+        # Start the AGM.
+        if params == "on":
+            self.agm = gome.AGM(self.chatMgr)
+            self.chatMgr.DisplayStatusMessage("The AGM is now running.")
+            return
+
+        # Check that the AGM is running before continuing.
+        try:
+            self.agm
+        except AttributeError:
+            self.chatMgr.DisplayStatusMessage("The AGM manager hasn't been started yet. Type \"/agm on\".")
+            return
+
+        # Stop the AGM.
+        if params == "off":
+            self.agm.End()
+            del self.agm
+            self.chatMgr.DisplayStatusMessage("The AGM is now over.")
+
+        # List questions.
+        elif params == "l":
+            self.agm.ListQuestions()
+
+        # Delete a question.
+        elif params.startswith("d"):
+            if len(params) > 2:
+                try:
+                    id = int(params[2:])
+                    self.agm.DeleteQuestion(id)
+                except (IndexError, ValueError):
+                    self.chatMgr.DisplayStatusMessage("Invalid question ID.")
+            else:
+                self.chatMgr.DisplayStatusMessage("Please specify the ID of the question to delete.")
+
+        # Ask a question.
+        elif params.startswith("a"):
+            if len(params) > 2:
+                try:
+                    id = int(params[2:])
+                    self.agm.AskQuestion(id)
+                except (IndexError, ValueError):
+                    self.chatMgr.DisplayStatusMessage("Invalid question ID.")
+            else:
+                self.chatMgr.DisplayStatusMessage("Please specify the ID of the question to ask.")
+
+        # Ask the next question.
+        elif params == "n":
+            if self.agm.questions:
+                self.agm.AskQuestion()
+            else:
+                self.chatMgr.DisplayStatusMessage("The question queue is empty.")
+
+        # Add a speaker to the list.
+        elif params.startswith("+"):
+            if len(params) > 1:
+                playerName = params[1:]
+                if playerName not in self.agm.speakers:
+                    self.agm.speakers.append(playerName)
+                    self.chatMgr.DisplayStatusMessage("Player was added to the speaker list.")
+                else:
+                    self.chatMgr.DisplayStatusMessage("Player is already in the speaker list.")
+            else:
+                self.chatMgr.DisplayStatusMessage("Please specify the name of the speaker.")
+
+        # Remove a speaker from the list.
+        elif params.startswith("-"):
+            if len(params) > 1:
+                playerName = params[1:]
+                if playerName in self.agm.speakers:
+                    self.agm.speakers.remove(playerName)
+                    self.chatMgr.DisplayStatusMessage("Player was removed from the speaker list.")
+                else:
+                    self.chatMgr.DisplayStatusMessage("Player isn't in the speaker list.")
+            else:
+                self.chatMgr.DisplayStatusMessage("Please specify the name of the speaker.")
+
+        # Clear the question queue.
+        elif params == "c queue":
+            self.agm.questions = []
+            self.chatMgr.DisplayStatusMessage("Question queue cleared.")
+
+        # Clear the speaker list.
+        elif params == "c speakers":
+            self.agm.speakers = []
+            self.chatMgr.DisplayStatusMessage("Speaker list cleared.")
+
+        else:
+            self.chatMgr.DisplayStatusMessage("Invalid AGM command. Valid commands: l, d [id], a [id], n, +[speaker], -[speaker], c [speakers/questions].")
