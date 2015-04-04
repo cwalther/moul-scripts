@@ -48,6 +48,7 @@ import time
 from Plasma import *
 from PlasmaConstants import *
 from PlasmaKITypes import *
+from PlasmaNetConstants import *
 from PlasmaTypes import *
 from PlasmaVaultConstants import *
 
@@ -68,7 +69,7 @@ from PlasmaNetConstants import *
 class xKIChat(object):
 
     ## Set up the chat manager's default state.
-    def __init__(self, StartFadeTimer, KillFadeTimer, FadeCompletely):
+    def __init__(self, StartFadeTimer, ResetFadeState, FadeCompletely):
 
         # Set the default properties.
         self.autoShout = False
@@ -95,11 +96,15 @@ class xKIChat(object):
         self.KIDisabled = False
         self.KILevel = kMicroKI
         self.StartFadeTimer = StartFadeTimer
-        self.KillFadeTimer = KillFadeTimer
+        self.ResetFadeState = ResetFadeState
         self.FadeCompletely = FadeCompletely
 
         # Add the commands processor.
         self.commandsProcessor = CommandsProcessor(self)
+
+        # Message History
+        self.MessageHistoryIs = -1 # Current position in message history (up/down key)
+        self.MessageHistoryList = [] # Contains our message history
 
     #######
     # GUI #
@@ -132,8 +137,7 @@ class xKIChat(object):
             mKIdialog = KIMicro.dialog
         else:
             mKIdialog = KIMini.dialog
-        self.KillFadeTimer()
-        self.StartFadeTimer()
+        self.ResetFadeState()
         chatarea = ptGUIControlMultiLineEdit(mKIdialog.getControlFromTag(kGUI.ChatDisplayArea))
         chatarea.moveCursor(direction)
 
@@ -144,6 +148,8 @@ class xKIChat(object):
     ## Make the player enter or exit chat mode.
     # Chat mode means the player's keyboard input is being sent to the chat.
     def ToggleChatMode(self, entering, firstChar=None):
+        # Reset selection in message history
+        self.MessageHistoryIs = -1
 
         if self.KILevel == kMicroKI:
             mKIdialog = KIMicro.dialog
@@ -165,7 +171,7 @@ class xKIChat(object):
             caret.show()
             mKIdialog.setFocus(chatEdit.getKey())
             self.toReplyToLastPrivatePlayerID = self.lastPrivatePlayerID
-            self.KillFadeTimer()
+            self.ResetFadeState()
         else:
             caret.hide()
             chatEdit.hide()
@@ -192,11 +198,10 @@ class xKIChat(object):
         if PtGetLocalAvatar().avatar.getCurrentMode() == PtBrainModes.kAFK:
             PtAvatarExitAFK()
 
-        try:
-            message = unicode(message, kCharSet)
-        except UnicodeError:
-            message = None
-            self.AddChatLine(None, PtGetLocalizedString("KI.Errors.TextOnly"), kChat.SystemMessage)
+        # Add the input to the local chat message history.
+        self.MessageHistoryList.insert(0, message)
+        if (len(self.MessageHistoryList) > kMessageHistoryListMax):
+            self.MessageHistoryList.pop()
 
         # Check for special commands.
         message = self.commandsProcessor(message)
@@ -439,7 +444,10 @@ class xKIChat(object):
             # Is it an inter-Age message?
             elif cFlags.interAge:
                 if cFlags.private:
-                    headerColor = kColors.ChatHeaderPrivate
+                    if cFlags.admin:
+                        headerColor = kColors.ChatHeaderError
+                    else:
+                        headerColor = kColors.ChatHeaderPrivate
                     forceKI = True
                 else:
                     if cFlags.neighbors:
@@ -477,7 +485,10 @@ class xKIChat(object):
                     # PM Processing: Save playerID and flash client window
                     if cFlags.private:
                         self.lastPrivatePlayerID = (player.getPlayerName(), player.getPlayerID(), 1)
-                        self.AddPlayerToRecents(player.getPlayerID())
+                        PtFlashWindow()
+                    # Are we mentioned in the message?
+                    elif message.lower().find(PtGetLocalPlayer().getPlayerName().lower()) >= 0:
+                        bodyColor = kColors.ChatMessageMention
                         PtFlashWindow()
 
             # Is it a ccr broadcast?
@@ -494,8 +505,16 @@ class xKIChat(object):
             elif cFlags.admin:
                 if cFlags.private:
                     headerColor = kColors.ChatHeaderError
-                    pretext = PtGetLocalizedString("KI.Chat.PrivateMsgRecvd")
+                    if cFlags.toSelf:
+                        pretext = PtGetLocalizedString("KI.Chat.PrivateSendTo")
+                    else:
+                        pretext = PtGetLocalizedString("KI.Chat.PrivateMsgRecvd")
                     forceKI = True
+
+                    # PM Processing: Save playerID and flash client window
+                    self.lastPrivatePlayerID = (player.getPlayerName(), player.getPlayerID(), 0)
+                    self.AddPlayerToRecents(player.getPlayerID())
+                    PtFlashWindow()
                 else:
                     headerColor = kColors.ChatHeaderAdmin
                     forceKI = True
@@ -509,6 +528,12 @@ class xKIChat(object):
                     headerColor = kColors.ChatHeaderBroadcast
                     pretext = PtGetLocalizedString("KI.Chat.BroadcastMsgRecvd")
                     self.AddPlayerToRecents(player.getPlayerID())
+
+                    # Are we mentioned in the message?
+                    if message.lower().find(PtGetLocalPlayer().getPlayerName().lower()) >= 0:
+                        bodyColor = kColors.ChatMessageMention
+                        forceKI = True
+                        PtFlashWindow()
 
             # Is it a private message?
             elif cFlags.private:
@@ -615,9 +640,7 @@ class xKIChat(object):
 
         # Update the fading controls.
         mKIdialog.refreshAllControls()
-        if not self.isChatting:
-            self.KillFadeTimer()
-            self.StartFadeTimer()
+        self.ResetFadeState()
 
     ## Display a status message to the player (or players if net-propagated).
     def DisplayStatusMessage(self, statusMessage, netPropagate=0):
@@ -833,6 +856,7 @@ class CommandsProcessor:
         if PtIsInternalRelease():
             commands.update(kCommands.Internal)
         commands.update(kCommands.EasterEggs)
+        commands.update(kCommands.Other)
         commands.update(kCommands.GoMe)
 
         # Does the message contain a standard command?
@@ -878,7 +902,10 @@ class CommandsProcessor:
             words = message.split()
             try:
                 emote = xKIExtChatCommands.xChatEmoteXlate[unicode(words[0][1:].lower())]
-                PtEmoteAvatar(emote[0])
+                if emote[0] in xKIExtChatCommands.xChatEmoteLoop:
+                    PtAvatarEnterAnimMode(emote[0])
+                else:
+                    PtEmoteAvatar(emote[0])
                 if PtGetLanguage() == PtLanguage.kEnglish:
                     avatar = PtGetLocalAvatar()
                     gender = avatar.avatar.getAvatarClothingGroup()
@@ -1314,6 +1341,117 @@ class CommandsProcessor:
                 self.chatMgr.AddChatLine(None, pOut, 0)
         else:
             self.chatMgr.AddChatLine(None, "There is nothing there but lint.", 0)
+
+    ##################
+    # Other Commands #
+    ##################
+
+    def PartyTime(self, params):
+        """Implements the `/party` command"""
+
+        # First, find the PartyAge chronicle in the global inbox
+        party = None
+        vault = ptVault()
+        inbox = vault.getGlobalInbox()
+        for childRef in inbox.getChildNodeRefList():
+            child = childRef.getChild()
+            if not child:
+                continue
+            child = child.upcastToChronicleNode()
+            if not child:
+                continue
+            if child.chronicleGetName() == kChron.Party:
+                party = child
+                break
+
+        # Let's see what we need to do
+        if not params:
+            # No params = LINK ME!
+            if party and party.chronicleGetValue():
+                data = party.chronicleGetValue().split(";", 3)
+                ageInfo = ptAgeInfoStruct()
+                ageInfo.setAgeFilename(data[0])
+                ageInfo.setAgeInstanceGuid(data[1])
+
+                ageLink = ptAgeLinkStruct()
+                ageLink.setAgeInfo(ageInfo)
+                ageLink.setLinkingRules(PtLinkingRules.kBasicLink)
+                ageLink.setSpawnPoint(ptSpawnPointInfo(data[2], data[2]))
+
+                # Player is not really linking--this is an OOC cheat.
+                nlm = ptNetLinkingMgr()
+                nlm.linkToAge(ageLink, linkInSfx=False, linkOutSfx=False)
+            else:
+                self.chatMgr.AddChatLine(None, "There is no party to crash!", kChat.SystemMessage)
+                return
+        elif PtIsInternalRelease():
+            try:
+                PtFindSceneobject(params, PtGetAgeName())
+            except NameError:
+                # Garbage SO = kill party
+                if party:
+                    party.chronicleSetValue("")
+                    party.save()
+                    self.chatMgr.AddChatLine(None, "Party Crashed.", 0)
+                else:
+                    self.chatMgr.AddChatLine(None, "No party. Your link-in-point is invalid.", kChat.SystemMessage)
+            else:
+                # Got a LIP... Need to set the chronicle
+                ageInfo = PtGetAgeInfo()
+                data = "%s;%s;%s" % (ageInfo.getAgeFilename(), ageInfo.getAgeInstanceGuid(), params)
+                if not party:
+                    party = ptVaultChronicleNode()
+                    party.chronicleSetName(kChron.Party)
+                    party.chronicleSetValue(data)
+                    party.save() # creates node on server (and blocks) so we can add it to the global inbox
+                    inbox.addNode(party)
+                else:
+                    party.chronicleSetValue(data)
+                    party.save()
+
+    ## Export the local avatar's clothing to a file
+    def SaveClothing(self, file):
+        if not file:
+            self.chatMgr.AddChatLine(None, "Usage: /loadclothing <name>", kChat.SystemMessage)
+            return
+        file = file + ".clo"
+        if PtGetLocalAvatar().avatar.saveClothingToFile(file):
+            self.chatMgr.AddChatLine(None, "Outfit exported to " + file, 0)
+        else:
+            self.chatMgr.AddChatLine(None, "Could not export to " + file, kChat.SystemMessage)
+
+    ## Import the local avatar's clothing from a file
+    def LoadClothing(self, file):
+        if not file:
+            self.chatMgr.AddChatLine(None, "Usage: /loadclothing <name>", kChat.SystemMessage)
+            return
+        if PtGetPlayerList() and not PtIsInternalRelease():
+            self.chatMgr.AddChatLine(None, "You have to be alone to change your clothes!", kChat.SystemMessage)
+            return
+        file = file + ".clo"
+        if PtGetLocalAvatar().avatar.loadClothingFromFile(file):
+            self.chatMgr.AddChatLine(None, "Outfit imported from " + file, 0)
+        else:
+            self.chatMgr.AddChatLine(None, file + " not found", kChat.SystemMessage)
+
+    ## Example function for a coop animation
+    def CoopExample(self, name):
+        if not name:
+            self.chatMgr.AddChatLine(None, "Usage: /threaten <playername>", kChat.SystemMessage)
+            return
+        targetKey = None;
+        for player in PtGetPlayerList():
+            if player.getPlayerName().lower() == name.lower():
+                name = player.getPlayerName()
+                targetKey = PtGetAvatarKeyFromClientID(player.getPlayerID())
+                break
+        if targetKey is None:
+            self.chatMgr.AddChatLine(None, name + " not found", kChat.SystemMessage)
+            return
+        if PtGetLocalAvatar().avatar.runCoopAnim(targetKey, "ShakeFist", "Cower"):
+            self.chatMgr.DisplayStatusMessage(PtGetClientName() + " threatens " + name, 1)
+        else:
+            self.chatMgr.AddChatLine(None, "You are too far away", kChat.SystemMessage)
 
     #~~~~~~~~~~~~~~~~~~~~~~#
     # Easter Eggs Commands #

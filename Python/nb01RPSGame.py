@@ -559,7 +559,7 @@ class nb01RPSGame(ptResponder):
                     statusMsg = PtGetLocalizedString("Heek.Messages.Welcome", [finalMsg.name(), unicode(finalMsg.rank()), unicode(finalMsg.points())])
                 else:
                     statusMsg = PtGetLocalizedString("Heek.Messages.WelcomePlural", [finalMsg.name(), unicode(finalMsg.rank()), unicode(finalMsg.points())])
-                PtDebugPrint("nb01RPSGame::OnGameCliMsg(): Sending welcome message to the KI: "+str(statusMsg))
+                PtDebugPrint("nb01RPSGame::OnGameCliMsg(): Sending welcome message to the KI: "+statusMsg)
                 PtSendKIMessage(kKILocalChatStatusMsg,statusMsg)
             elif (msgType == PtHeekMsgTypes.kHeekDrop):
                 # this message should only be sent to the game owner, so we don't need to check to see if we are the owner
@@ -737,15 +737,15 @@ class nb01RPSGame(ptResponder):
                     chron = childref.getChild().upcastToChronicleNode()
                     print "nb01RPSGame::UpdateImager(): chron:", chron
                     if chron:
-                        ownerNode = chron.getOwnerNode()
-                        if ownerNode: # apparently a chronicle node doesn't have a parent sometimes?
-                            ownerNode = ownerNode.upcastToPlayerInfoNode()
-                        if ownerNode:
-                            if ageOwnerList.playerlistHasPlayer(ownerNode.playerGetID()):
-                                ownerNode = ownerNode.upcastToPlayerInfoNode()
-                                print "nb01RPSGame::UpdateImager(): owner node:", ownerNode
-                                if ownerNode:
-                                    scorelist.append( (int(chron.chronicleGetValue()), ownerNode.playerGetName()) )
+                        creatorNode = chron.getCreatorNode()
+                        if creatorNode: # apparently a chronicle node doesn't have a parent sometimes?
+                            creatorNode = creatorNode.upcastToPlayerInfoNode()
+                        if creatorNode:
+                            if ageOwnerList.playerlistHasPlayer(creatorNode.playerGetID()):
+                                creatorNode = creatorNode.upcastToPlayerInfoNode()
+                                print "nb01RPSGame::UpdateImager(): creator node:", creatorNode
+                                if creatorNode:
+                                    scorelist.append( (int(chron.chronicleGetValue()), creatorNode.playerGetName()) )
                                     print scorelist
                             else:
                                 print "nb01RPSGame::UpdateImager(): removing chronicle node"

@@ -116,7 +116,9 @@ kDialogLoaded=4         # the dialog has just been loaded
 kFocusChange=5          # the focus changed from one control to another, or none, within the dialog
 kExitMode = 6		# Modal dialog received an exit mode command
 kInterestingEvent = 7   # an interesting event happened
-kSpecialAction = 8      #special action ( kEditBox tab press)
+kSpecialAction = 8      # special action ( kEditBox tab press)
+kMessageHistoryUp = 9   # chat history up key pressed
+kMessageHistoryDown = 10    # chat history down key pressed
 
 # OnRoomLoad 'what' types
 kLoaded=1
@@ -158,19 +160,6 @@ kAssertLevel = 4
 def PtAssert(cond, msg):
     "Plasma assert. Just like the Python one but we can set it to NOP in release"
     assert cond,msg
-
-def PtDebugPrint(*msgs,**keywords):
-    "Plasma debug print. Will be NOP'd when released"
-    try:
-        level = keywords['level']
-    except LookupError:
-        level = kErrorLevel
-    if level >= PtGetPythonLoggingLevel():
-        if level == 4:
-            PtAssert(0,msgs[0])
-        else:
-            for msg in msgs:
-                print msg
 
 def PtGetObjectName(obj):
     "Given a ptSceneobject, return its name"

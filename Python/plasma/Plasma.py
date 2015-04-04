@@ -66,6 +66,10 @@ def PtAvatarEnterAFK():
     """Tells the local avatar to enter AwayFromKeyboard idle loop (netpropagated)"""
     pass
 
+def PtAvatarEnterAnimMode(animName):
+    """Enter a custom anim loop (netpropagated)"""
+    pass
+
 def PtAvatarEnterLookingAtKI():
     """Tells the local avatar to enter looking at KI idle loop (netpropagated)"""
     pass
@@ -76,6 +80,10 @@ def PtAvatarEnterUsePersBook():
 
 def PtAvatarExitAFK():
     """Tells the local avatar to exit AwayFromKeyboard idle loop (netpropagated)"""
+    pass
+
+def PtAvatarExitAnimMode(animName):
+    """Exit custom anim loop (netpropagated)"""
     pass
 
 def PtAvatarExitLookingAtKI():
@@ -162,6 +170,10 @@ cbObject, if supplied should have a member called publicAgeCreated(self,ageInfo)
 
 def PtDebugAssert(cond, msg):
     """Debug only: Assert if condition is false."""
+    pass
+
+def PtDebugPrint(*msgs, **kwargs):
+    """Prints msgs to the Python log given the message's level"""
     pass
 
 def PtDeletePlayer(playerInt):
@@ -1549,6 +1561,10 @@ The color will be a ptColor object."""
         """Tells a multistage behavior to go to a particular stage"""
         pass
 
+    def loadClothingFromFile(self,filename):
+        """Load avatar clothing from a file"""
+        pass
+
     def netForce(self,forceFlag):
         """Specify whether this object needs to use messages that are forced to the network
 - This is to be used if your Python program is running on only one client
@@ -1587,8 +1603,16 @@ Such as a game master, only running on the client that owns a particular object"
         """Same as runBehavior, except send notifications to specified keyed object"""
         pass
 
+    def runCoopAnim(self,targetKey,activeAvatarAnim,targetAvatarAnim,range=6,dist=3,move=1):
+        """Seek near another avatar and run animations on both."""
+        pass
+
     def saveClothing(self):
         """Saves the current clothing options (including morphs) to the vault"""
+        pass
+
+    def saveClothingToFile(self,filename):
+        """Save avatar clothing to a file"""
         pass
 
     def setMorph(self,clothing_name,layer,value):
@@ -2257,10 +2281,6 @@ class ptDynamicMap:
         """Draw text at a specified location
 - x,y is the point to start drawing the text
 - 'text' is a string of the text to be drawn"""
-        pass
-
-    def drawTextW(self,x,y,text):
-        """Unicode version of drawText"""
         pass
 
     def fillRect(self,left,top,right,bottom,color):
