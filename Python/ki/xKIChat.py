@@ -1629,7 +1629,7 @@ class CommandsProcessor:
         # Add a speaker to the list.
         elif params.startswith("+"):
             if len(params) > 1:
-                playerName = params[1:]
+                playerName = params[(2 if params[1] == " " else 1):]
                 if playerName not in self.agm.speakers:
                     self.agm.speakers.append(playerName)
                     self.chatMgr.DisplayStatusMessage("Player was added to the speaker list.")
@@ -1641,7 +1641,7 @@ class CommandsProcessor:
         # Remove a speaker from the list.
         elif params.startswith("-"):
             if len(params) > 1:
-                playerName = params[1:]
+                playerName = params[(2 if params[1] == " " else 1):]
                 if playerName in self.agm.speakers:
                     self.agm.speakers.remove(playerName)
                     self.chatMgr.DisplayStatusMessage("Player was removed from the speaker list.")
