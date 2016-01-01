@@ -42,6 +42,18 @@ kHeader = """<html>
         span.date {{
             margin-right: 10px;
         }}
+        .speaker {{
+            font-weight: bold;
+        }}
+        .question {{
+            font-weight: bold;
+            font-style: italic;
+            color: #23b8dc;
+        }}
+        .moderator {{
+            font-weight: bold;
+            color: #b80047;
+        }}
         
         div#main {{
             background-color: #FFFFFF;
@@ -59,9 +71,9 @@ kHeader = """<html>
         <div id="main">
             <p style=\"margin-bottom: 20px;\">
                 <strong style=\"text-decoration: underline;\">KEY:</strong><br />
-                <strong>Speaker</strong><br />
-                <strong><em style=\"color: #23b8dc;\">Question</em></strong><br />
-                <strong style=\"color: #b80047;\">Moderator</strong>
+                <span class="speaker">Speaker</span><br />
+                <span class="question">Question</span><br />
+                <span class="moderator">Moderator</span>
             </p>\n"""
 
 kFooter = """        </div>
@@ -158,17 +170,9 @@ class AGM:
         # Write the cleansed log data (escape the text, since it's HTML).
         msg = msg.encode("ascii", "xmlcharrefreplace")
         playerName = playerName.encode("ascii", "xmlcharrefreplace")
-        if isSpeaker or isQuestion:
-            if isStatus and ("claps his hand" in msg or "claps her hands" in msg or "cheers" in msg):
-                return
-            cleansedMsg = "<p><strong>{}".format("<em style=\"color: #23b8dc;\">" if isQuestion else "")
-            cleansedMsg += "<span class=\"date\">{}</span><span class=\"message\">".format(theTime)
-            cleansedMsg += msg if isStatus else "{}: {}".format(playerName, msg)
-            cleansedMsg += "</span>{}</strong></p>".format("</em>" if isQuestion else "")
-        else:
-            if isStatus and ("claps his hand" in msg or "claps her hands" in msg or "cheers" in msg):
-                return
-            cleansedMsg = "<p{}><span class=\"date\">{}</span><span class=\"message\">".format(" style=\"color: #b80047; font-weight: bold;\"" if playerName == PtGetLocalPlayer().getPlayerName() else "", theTime)
-            cleansedMsg += msg if isStatus else "{}: {}".format(playerName, msg)
-            cleansedMsg += "</span></p>"
+        if isStatus and ("claps his hand" in msg or "claps her hands" in msg or "cheers" in msg):
+            return
+        cleansedMsg = "<p{}><span class=\"date\">{}</span><span class=\"message\">".format(" class=\"question\"" if isQuestion else " class=\"speaker\"" if isSpeaker else " class=\"moderator\"" if playerName == PtGetLocalPlayer().getPlayerName() else "", theTime)
+        cleansedMsg += msg if isStatus else "{}: {}".format(playerName, msg)
+        cleansedMsg += "</span></p>"
         self.logCleansed.write("            {}\n".format(cleansedMsg))
