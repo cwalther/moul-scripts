@@ -608,9 +608,9 @@ class xKIChat(object):
         else:
             isBroadcast = isPrivate = isInterAge = isStatus = 0
         try:
-            if (isBroadcast or isStatus) and not isInterAge and player:
+            if isBroadcast and not isInterAge:
                 self.commandsProcessor.agm.WriteLogs(player, message, isStatus, isQuestion)
-            if "?" in message and isPrivate and not isInterAge:
+            if "?" in message and isPrivate and not isInterAge and player:
                 self.commandsProcessor.agm.questions.append([player.getPlayerName(), message])
         except AttributeError:
             pass
@@ -652,6 +652,8 @@ class xKIChat(object):
             plyrList = self.GetPlayersInChatDistance()
             if len(plyrList) > 0:
                 PtSendRTChat(PtGetLocalPlayer(), plyrList, statusMessage, cFlags.flags)
+        else:
+            cFlags.private = True
         self.AddChatLine(None, statusMessage, cFlags)
 
     ###########

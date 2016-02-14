@@ -151,7 +151,9 @@ class AGM:
     ## Writes a new log entry.
     def WriteLogs(self, player, msg, isStatus, isQuestion=False):
 
-        if isinstance(player, str) or isinstance(player, unicode):
+        if not player:
+            playerName = ""
+        elif isinstance(player, str) or isinstance(player, unicode):
             playerName = player
         else:
             playerName = player.getPlayerName()
@@ -159,7 +161,8 @@ class AGM:
         curTime = time.strftime("%H:%M:%S", tupTime)
         curDate = time.strftime("%m/%d", tupTime)
         theTime = "({} {})".format(curDate, curTime)
-        isSpeaker = playerName.lower() in [s.lower() for s in self.speakers] or isQuestion
+        isSpeaker = playerName.lower() in [s.lower() for s in self.speakers] or isQuestion or isStatus and any(msg.lower().startswith(s.lower()) for s in self.speakers)
+        isModerator = playerName == PtGetLocalPlayer().getPlayerName() or isStatus and msg.startswith(PtGetLocalPlayer().getPlayerName())
 
         # Write the raw log data.
         if isStatus:
@@ -172,7 +175,7 @@ class AGM:
         playerName = playerName.encode("ascii", "xmlcharrefreplace")
         if isStatus and ("claps his hand" in msg or "claps her hands" in msg or "cheers" in msg):
             return
-        cleansedMsg = "<p{}><span class=\"date\">{}</span><span class=\"message\">".format(" class=\"question\"" if isQuestion else " class=\"speaker\"" if isSpeaker else " class=\"moderator\"" if playerName == PtGetLocalPlayer().getPlayerName() else "", theTime)
+        cleansedMsg = "<p{}><span class=\"date\">{}</span><span class=\"message\">".format(" class=\"question\"" if isQuestion else " class=\"speaker\"" if isSpeaker else " class=\"moderator\"" if isModerator else "", theTime)
         cleansedMsg += msg if isStatus else "{}: {}".format(playerName, msg)
         cleansedMsg += "</span></p>"
         self.logCleansed.write("            {}\n".format(cleansedMsg))
